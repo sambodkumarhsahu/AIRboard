@@ -117,9 +117,7 @@ The model file is included in this repository so the application can locate it u
 
 ## Demo
 
-A live demo video can be added here:
-
-> Demo coming soon.
+[Watch the AIRboard demo on Instagram](https://www.instagram.com/reel/Db0Zv7WO5DI/)
 
 ## How It Works
 
