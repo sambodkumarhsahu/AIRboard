@@ -65,6 +65,10 @@ shape_mode = "FREEHAND"
 shape_start = None
 shape_preview = None
 
+circle_active = False
+circle_center = None
+circle_radius = 0
+
 
 def finger_extended(hand, tip, pip, mcp):
     wrist = hand[0]
@@ -118,9 +122,7 @@ def finger_extended(hand, tip, pip, mcp):
         math.acos(cosine)
     )
 
-    straight = angle > 145
-
-    return long_enough and straight
+    return long_enough and angle > 145
 
 
 def thumb_extended(hand):
@@ -167,7 +169,6 @@ def draw_hand(frame, hand):
     for landmark in hand:
         x = int(landmark.x * width)
         y = int(landmark.y * height)
-
         points.append((x, y))
 
     for start, end in CONNECTIONS:
@@ -228,7 +229,6 @@ def draw_shape(
     x2, y2 = end
 
     if shape == "LINE":
-
         cv2.line(
             image,
             start,
@@ -239,7 +239,6 @@ def draw_shape(
         )
 
     elif shape == "RECTANGLE":
-
         cv2.rectangle(
             image,
             start,
@@ -250,13 +249,13 @@ def draw_shape(
         )
 
     elif shape == "CIRCLE":
-
         dx = x2 - x1
         dy = y2 - y1
 
         radius = int(
             math.sqrt(
-                dx * dx + dy * dy
+                dx * dx +
+                dy * dy
             )
         )
 
@@ -271,7 +270,6 @@ def draw_shape(
             )
 
     elif shape == "TRIANGLE":
-
         dx = x2 - x1
         dy = y2 - y1
 
@@ -281,7 +279,6 @@ def draw_shape(
         )
 
         if size > 2:
-
             top = (
                 x1,
                 y1 - size
@@ -325,14 +322,12 @@ def commit_shape():
         and shape_start is not None
         and shape_preview is not None
     ):
-
         distance = math.hypot(
             shape_preview[0] - shape_start[0],
             shape_preview[1] - shape_start[1]
         )
 
         if distance > 5:
-
             draw_shape(
                 drawing_layer,
                 shape_mode,
@@ -353,6 +348,36 @@ def commit_shape():
 
     shape_start = None
     shape_preview = None
+
+
+def commit_red_circle():
+    global circle_active
+    global circle_center
+    global circle_radius
+
+    if circle_active and circle_center is not None:
+        if circle_radius > 2:
+            cv2.circle(
+                drawing_layer,
+                circle_center,
+                circle_radius,
+                RED,
+                PEN_THICKNESS,
+                cv2.LINE_AA
+            )
+
+            cv2.circle(
+                drawing_mask,
+                circle_center,
+                circle_radius,
+                255,
+                PEN_THICKNESS,
+                cv2.LINE_AA
+            )
+
+    circle_active = False
+    circle_center = None
+    circle_radius = 0
 
 
 start_time = time.time()
@@ -380,7 +405,6 @@ with HandLandmarker.create_from_options(options) as landmarker:
         height, width, _ = frame.shape
 
         if drawing_layer is None:
-
             drawing_layer = np.zeros_like(frame)
 
             drawing_mask = np.zeros(
@@ -451,9 +475,7 @@ with HandLandmarker.create_from_options(options) as landmarker:
                 mcp=17
             )
 
-            thumb_open = thumb_extended(
-                hand
-            )
+            thumb_open = thumb_extended(hand)
 
             index_only = (
                 index_open
@@ -479,6 +501,14 @@ with HandLandmarker.create_from_options(options) as landmarker:
                 and not thumb_open
             )
 
+            two_finger_circle = (
+                index_open
+                and middle_open
+                and not ring_open
+                and not pinky_open
+                and not thumb_open
+            )
+
             open_palm = (
                 index_open
                 and middle_open
@@ -487,209 +517,276 @@ with HandLandmarker.create_from_options(options) as landmarker:
                 and thumb_open
             )
 
-            horizontal_palm = is_horizontal_palm(
-                hand
-            )
+            horizontal_palm = is_horizontal_palm(hand)
 
-            if index_only:
+            if two_finger_circle:
 
-                is_drawing = True
+                commit_shape()
+
+                is_drawing = False
 
                 current_color = RED
                 current_color_name = "RED"
 
-                gesture_name = "INDEX - RED"
-
-                active_tip = 8
-
-            elif middle_only:
-
-                is_drawing = True
-
-                current_color = BLUE
-                current_color_name = "BLUE"
-
-                gesture_name = "MIDDLE - BLUE"
-
-                active_tip = 12
-
-            elif pinky_only:
-
-                is_drawing = True
-
-                current_color = BLACK
-                current_color_name = "BLACK"
-
-                gesture_name = "PINKY - BLACK"
-
-                active_tip = 20
-
-            elif open_palm and horizontal_palm:
-
-                is_erasing = True
-
-                gesture_name = "SIDEWAYS PALM - ERASE"
+                gesture_name = "TWO FINGERS - RED CIRCLE"
 
                 previous_point = None
 
-                commit_shape()
-
-                palm_x = int(
-                    (
-                        hand[0].x
-                        + hand[5].x
-                        + hand[9].x
-                        + hand[13].x
-                        + hand[17].x
-                    )
-                    / 5
-                    * width
+                index_x = int(
+                    hand[8].x * width
                 )
 
-                palm_y = int(
-                    (
-                        hand[0].y
-                        + hand[5].y
-                        + hand[9].y
-                        + hand[13].y
-                        + hand[17].y
-                    )
-                    / 5
-                    * height
+                index_y = int(
+                    hand[8].y * height
                 )
 
-                erase_point = (
-                    palm_x,
-                    palm_y
+                middle_x = int(
+                    hand[12].x * width
                 )
 
-                erase_area(
-                    erase_point
+                middle_y = int(
+                    hand[12].y * height
+                )
+
+                circle_center = (
+                    (index_x + middle_x) // 2,
+                    (index_y + middle_y) // 2
+                )
+
+                finger_distance = math.hypot(
+                    middle_x - index_x,
+                    middle_y - index_y
+                )
+
+                circle_radius = max(
+                    5,
+                    int(finger_distance / 2)
+                )
+
+                circle_active = True
+
+                cv2.circle(
+                    frame,
+                    circle_center,
+                    circle_radius,
+                    RED,
+                    PEN_THICKNESS,
+                    cv2.LINE_AA
                 )
 
                 cv2.circle(
                     frame,
-                    erase_point,
-                    ERASER_RADIUS,
-                    WHITE,
-                    3
-                )
-
-            elif open_palm:
-
-                gesture_name = "OPEN PALM - STOP"
-
-                previous_point = None
-
-                commit_shape()
-
-            else:
-
-                gesture_name = "OTHER GESTURE"
-
-                previous_point = None
-
-                commit_shape()
-
-            if active_tip is not None:
-
-                raw_x = int(
-                    hand[active_tip].x * width
-                )
-
-                raw_y = int(
-                    hand[active_tip].y * height
-                )
-
-                if smoothed_x is None:
-
-                    smoothed_x = float(raw_x)
-                    smoothed_y = float(raw_y)
-
-                else:
-
-                    smoothed_x = (
-                        SMOOTHING * raw_x
-                        + (1 - SMOOTHING) * smoothed_x
-                    )
-
-                    smoothed_y = (
-                        SMOOTHING * raw_y
-                        + (1 - SMOOTHING) * smoothed_y
-                    )
-
-                smooth_point = (
-                    int(smoothed_x),
-                    int(smoothed_y)
-                )
-
-                if shape_mode == "FREEHAND":
-
-                    if is_drawing:
-
-                        if previous_point is not None:
-
-                            movement = math.hypot(
-                                smooth_point[0]
-                                - previous_point[0],
-                                smooth_point[1]
-                                - previous_point[1]
-                            )
-
-                            if movement > 2:
-
-                                cv2.line(
-                                    drawing_layer,
-                                    previous_point,
-                                    smooth_point,
-                                    current_color,
-                                    PEN_THICKNESS,
-                                    cv2.LINE_AA
-                                )
-
-                                cv2.line(
-                                    drawing_mask,
-                                    previous_point,
-                                    smooth_point,
-                                    255,
-                                    PEN_THICKNESS,
-                                    cv2.LINE_AA
-                                )
-
-                        previous_point = smooth_point
-
-                else:
-
-                    if is_drawing:
-
-                        previous_point = None
-
-                        if shape_start is None:
-
-                            shape_start = smooth_point
-
-                        shape_preview = smooth_point
-
-                cv2.circle(
-                    frame,
-                    smooth_point,
-                    9,
-                    current_color,
+                    (index_x, index_y),
+                    8,
+                    RED,
                     -1
                 )
 
                 cv2.circle(
                     frame,
-                    smooth_point,
-                    12,
-                    WHITE,
-                    2
+                    (middle_x, middle_y),
+                    8,
+                    RED,
+                    -1
                 )
 
             else:
 
-                smoothed_x = None
-                smoothed_y = None
+                if circle_active:
+                    commit_red_circle()
+
+                if index_only:
+
+                    is_drawing = True
+
+                    current_color = RED
+                    current_color_name = "RED"
+
+                    gesture_name = "INDEX - RED"
+
+                    active_tip = 8
+
+                elif middle_only:
+
+                    is_drawing = True
+
+                    current_color = BLUE
+                    current_color_name = "BLUE"
+
+                    gesture_name = "MIDDLE - BLUE"
+
+                    active_tip = 12
+
+                elif pinky_only:
+
+                    is_drawing = True
+
+                    current_color = BLACK
+                    current_color_name = "BLACK"
+
+                    gesture_name = "PINKY - BLACK"
+
+                    active_tip = 20
+
+                elif open_palm and horizontal_palm:
+
+                    is_erasing = True
+
+                    gesture_name = "SIDEWAYS PALM - ERASE"
+
+                    previous_point = None
+
+                    commit_shape()
+
+                    palm_x = int(
+                        (
+                            hand[0].x +
+                            hand[5].x +
+                            hand[9].x +
+                            hand[13].x +
+                            hand[17].x
+                        ) / 5 * width
+                    )
+
+                    palm_y = int(
+                        (
+                            hand[0].y +
+                            hand[5].y +
+                            hand[9].y +
+                            hand[13].y +
+                            hand[17].y
+                        ) / 5 * height
+                    )
+
+                    erase_point = (
+                        palm_x,
+                        palm_y
+                    )
+
+                    erase_area(erase_point)
+
+                    cv2.circle(
+                        frame,
+                        erase_point,
+                        ERASER_RADIUS,
+                        WHITE,
+                        3
+                    )
+
+                elif open_palm:
+
+                    gesture_name = "OPEN PALM - STOP"
+
+                    previous_point = None
+
+                    commit_shape()
+
+                else:
+
+                    gesture_name = "OTHER GESTURE"
+
+                    previous_point = None
+
+                    commit_shape()
+
+                if active_tip is not None:
+
+                    raw_x = int(
+                        hand[active_tip].x * width
+                    )
+
+                    raw_y = int(
+                        hand[active_tip].y * height
+                    )
+
+                    if smoothed_x is None:
+
+                        smoothed_x = float(raw_x)
+                        smoothed_y = float(raw_y)
+
+                    else:
+
+                        smoothed_x = (
+                            SMOOTHING * raw_x
+                            + (1 - SMOOTHING) * smoothed_x
+                        )
+
+                        smoothed_y = (
+                            SMOOTHING * raw_y
+                            + (1 - SMOOTHING) * smoothed_y
+                        )
+
+                    smooth_point = (
+                        int(smoothed_x),
+                        int(smoothed_y)
+                    )
+
+                    if shape_mode == "FREEHAND":
+
+                        if is_drawing:
+
+                            if previous_point is not None:
+
+                                movement = math.hypot(
+                                    smooth_point[0]
+                                    - previous_point[0],
+                                    smooth_point[1]
+                                    - previous_point[1]
+                                )
+
+                                if movement > 2:
+
+                                    cv2.line(
+                                        drawing_layer,
+                                        previous_point,
+                                        smooth_point,
+                                        current_color,
+                                        PEN_THICKNESS,
+                                        cv2.LINE_AA
+                                    )
+
+                                    cv2.line(
+                                        drawing_mask,
+                                        previous_point,
+                                        smooth_point,
+                                        255,
+                                        PEN_THICKNESS,
+                                        cv2.LINE_AA
+                                    )
+
+                            previous_point = smooth_point
+
+                    else:
+
+                        if is_drawing:
+
+                            previous_point = None
+
+                            if shape_start is None:
+                                shape_start = smooth_point
+
+                            shape_preview = smooth_point
+
+                    cv2.circle(
+                        frame,
+                        smooth_point,
+                        9,
+                        current_color,
+                        -1
+                    )
+
+                    cv2.circle(
+                        frame,
+                        smooth_point,
+                        12,
+                        WHITE,
+                        2
+                    )
+
+                else:
+
+                    smoothed_x = None
+                    smoothed_y = None
 
         else:
 
@@ -697,6 +794,9 @@ with HandLandmarker.create_from_options(options) as landmarker:
 
             smoothed_x = None
             smoothed_y = None
+
+            if circle_active:
+                commit_red_circle()
 
             commit_shape()
 
@@ -724,21 +824,18 @@ with HandLandmarker.create_from_options(options) as landmarker:
             )
 
         if is_drawing:
-
             status_color = current_color
 
         elif is_erasing:
-
             status_color = WHITE
 
         else:
-
-            status_color = (0, 0, 255)
+            status_color = RED
 
         cv2.rectangle(
             frame,
             (10, 10),
-            (530, 120),
+            (550, 120),
             (0, 0, 0),
             -1
         )
@@ -784,6 +881,17 @@ with HandLandmarker.create_from_options(options) as landmarker:
             0.43,
             WHITE,
             1,
+            cv2.LINE_AA
+        )
+
+        cv2.putText(
+            frame,
+            "TWO FINGERS = RED CIRCLE",
+            (20, height - 162),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            WHITE,
+            2,
             cv2.LINE_AA
         )
 
@@ -858,6 +966,9 @@ with HandLandmarker.create_from_options(options) as landmarker:
 
         elif key == ord("0"):
 
+            if circle_active:
+                commit_red_circle()
+
             commit_shape()
 
             shape_mode = "FREEHAND"
@@ -865,6 +976,9 @@ with HandLandmarker.create_from_options(options) as landmarker:
             previous_point = None
 
         elif key == ord("1"):
+
+            if circle_active:
+                commit_red_circle()
 
             commit_shape()
 
@@ -874,6 +988,9 @@ with HandLandmarker.create_from_options(options) as landmarker:
 
         elif key == ord("2"):
 
+            if circle_active:
+                commit_red_circle()
+
             commit_shape()
 
             shape_mode = "RECTANGLE"
@@ -881,6 +998,9 @@ with HandLandmarker.create_from_options(options) as landmarker:
             previous_point = None
 
         elif key == ord("3"):
+
+            if circle_active:
+                commit_red_circle()
 
             commit_shape()
 
@@ -890,6 +1010,9 @@ with HandLandmarker.create_from_options(options) as landmarker:
 
         elif key == ord("4"):
 
+            if circle_active:
+                commit_red_circle()
+
             commit_shape()
 
             shape_mode = "TRIANGLE"
@@ -898,9 +1021,7 @@ with HandLandmarker.create_from_options(options) as landmarker:
 
         elif key == ord("c") or key == ord("C"):
 
-            drawing_layer = np.zeros_like(
-                frame
-            )
+            drawing_layer = np.zeros_like(frame)
 
             drawing_mask = np.zeros(
                 (height, width),
@@ -910,6 +1031,10 @@ with HandLandmarker.create_from_options(options) as landmarker:
             previous_point = None
             shape_start = None
             shape_preview = None
+
+            circle_active = False
+            circle_center = None
+            circle_radius = 0
 
 
 camera.release()
